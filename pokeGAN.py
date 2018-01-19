@@ -6,20 +6,61 @@ import cv2
 import random
 import scipy.misc
 from utils import *
+import datetime
 import ipdb
+import time
+import matplotlib
+matplotlib.use('Agg')
+import matplotlib.pyplot as plt
+from tensorflow.examples.tutorials.mnist import input_data
+#will ensure that the correct data has been downloaded to your
+#local training folder and then unpack that data to return a dictionary of DataSet instances.
+mnist = input_data.read_data_sets("MNIST_data/")
+
+
 
 slim = tf.contrib.slim
-save_every = 25000
-plot_every = 5000
-HEIGHT, WIDTH, CHANNEL = 128, 128, 1
+save_every = 200
+plot_every = 10
+HEIGHT, WIDTH, CHANNEL = 28, 28, 1
 BATCH_SIZE = 64
 EPOCH = 5000
+gen_eval_num = 20
 os.environ['CUDA_VISIBLE_DEVICES'] = '15'
-version =  'OLLO_NO1'      #'newspectrogram'
-results_dir = 'results/' + version
-logdir = './model/'
+version =  'mnist_pm'      #FSD_pretty_128FSD_pretty_128_pad'newspectrogram' 'OLLO_NO1'
+#results_dir = 'results/' + version
+#logdir = './model/' + version
+
+results_dir = 'results/' + version + "/{0:%Y-%m-%dT%H-%M-%S}".format(datetime.datetime.now())
+logdir = './model/' + version + "/{0:%Y-%m-%dT%H-%M-%S}".format(datetime.datetime.now())
+
+if not os.path.exists(logdir):
+    os.makedirs(logdir)
+
+if not os.path.exists(results_dir):
+    os.makedirs(results_dir)
 
 
+#def load(saver, sess, logdir):
+    #print("Trying to restore saved checkpoints from {} ...".format(logdir),
+          #end="")
+
+    #ckpt = tf.train.get_checkpoint_state(logdir)
+    #if ckpt:
+        #print("  Checkpoint found: {}".format(ckpt.model_checkpoint_path))
+        #global_step = int(ckpt.model_checkpoint_path
+                          #.split('/')[-1]
+                          #.split('-')[-1])
+        #print("  Global step was: {}".format(global_step))
+        #print("  Restoring...", end="")
+        #saver.restore(sess, ckpt.model_checkpoint_path)
+        #print(" Done.")
+        #return global_step
+    #else:
+        #print(" No checkpoint found.")
+        #return None
+
+        
 def lrelu(x, n, leak=0.2): 
     return tf.maximum(x, leak * x, name=n) 
  
@@ -120,7 +161,13 @@ def discriminator(input, is_train, reuse=False):
         if reuse:
             scope.reuse_variables()
 
-        #Convolution, activation, bias, repeat! 
+        #Convolution, activation, bias, repeat!
+        #  if feed in padded spectrogram, first mask out the zeros
+        
+        #zeros = tf.cast(tf.zeros_like(input), dtype=tf.bool)
+        #ones = tf.cast(tf.ones_like(input), dtype=tf.bool)
+        #loc = tf.where(input!=0, ones, zeros)
+        #result = tf.boolean_mask(input, loc).reshape(128, -1)
         conv1 = tf.layers.conv2d(input, c2, kernel_size=[5, 5], strides=[2, 2], padding="SAME",
                                  kernel_initializer=tf.truncated_normal_initializer(stddev=0.02),
                                  name='conv1')
@@ -148,7 +195,7 @@ def discriminator(input, is_train, reuse=False):
         # start from act4
         dim = int(np.prod(act4.get_shape()[1:]))
         fc1 = tf.reshape(act4, shape=[-1, dim], name='fc1')
-      
+        
         
         w2 = tf.get_variable('w2', shape=[fc1.shape[-1], 1], dtype=tf.float32,
                              initializer=tf.truncated_normal_initializer(stddev=0.02))
@@ -159,16 +206,22 @@ def discriminator(input, is_train, reuse=False):
         logits = tf.add(tf.matmul(fc1, w2), b2, name='logits')
         # dcgan
         acted_out = tf.nn.sigmoid(logits)
+        
         return logits #, acted_out
+
 
 
 def train(data_folder):
     random_dim = 100
+    x_placeholder = tf.placeholder("float", shape = [None,28,28,1], name='x_placeholder')
+    
     print('CUDA_VISIBLE_DEVICES', os.environ['CUDA_VISIBLE_DEVICES'])
+
     
     with tf.variable_scope('input'):
         #real and fake image placholders
         real_image = tf.placeholder(tf.float32, shape = [None, HEIGHT, WIDTH, CHANNEL], name='real_image')
+        #real_image = mnist.train.next_batch(BATCH_SIZE)[0].reshape([BATCH_SIZE, 28, 28, 1])
         random_input = tf.placeholder(tf.float32, shape=[None, random_dim], name='rand_input')
         is_train = tf.placeholder(tf.bool, name='is_train')
     
@@ -179,20 +232,20 @@ def train(data_folder):
     fake_result = discriminator(fake_image, is_train, reuse=True)
     
     d_loss = tf.reduce_mean(fake_result) - tf.reduce_mean(real_result)  # This optimizes the discriminator.
-    g_loss = -tf.reduce_mean(fake_result)  # This optimizes the generator.
+    g_loss = - tf.reduce_mean(fake_result)  # This optimizes the generator.
             
 
     t_vars = tf.trainable_variables()
     d_vars = [var for var in t_vars if 'dis' in var.name]
     g_vars = [var for var in t_vars if 'gen' in var.name]
     # test
-    # print(d_vars)
-    trainer_d = tf.train.RMSPropOptimizer(learning_rate=2e-4).minimize(d_loss, var_list=d_vars)
-    trainer_g = tf.train.RMSPropOptimizer(learning_rate=2e-4).minimize(g_loss, var_list=g_vars)
+    # print(d_vars)   # lr = 2e-4
+    trainer_d = tf.train.AdamOptimizer().minimize(d_loss, var_list=d_vars)
+    trainer_g = tf.train.AdamOptimizer().minimize(g_loss, var_list=g_vars)
     # clip discriminator weights
     d_clip = [v.assign(tf.clip_by_value(v, -0.01, 0.01)) for v in d_vars]
 
-    
+    # load data
     batch_size = BATCH_SIZE
     image_batch, samples_num = process_data(data_folder)
     
@@ -203,26 +256,29 @@ def train(data_folder):
     sess.run(tf.global_variables_initializer())
     sess.run(tf.local_variables_initializer())
     # continue training
-    save_path = saver.save(sess, "/tmp/model.ckpt")
+    save_path = saver.save(sess, "/tmp/model.ckpt")  # "model/newspectrogram/"
     ckpt = tf.train.latest_checkpoint(logdir + version)
     saver.restore(sess, save_path)
     coord = tf.train.Coordinator()
     threads = tf.train.start_queue_runners(sess=sess, coord=coord)
 
-    print('total training sample num:%d' % samples_num)
-    print('batch size: %d, batch num per epoch: %d, epoch num: %d' % (batch_size, batch_num, EPOCH))
+    #print('total training sample num:%d' % samples_num)
+    #print('batch size: %d, batch num per epoch: %d, epoch num: %d' % (batch_size, batch_num, EPOCH))
     print('start training...')
+
     for i in range(EPOCH):
+        t1 = time.time()
         print("epoch: ", i)
         for j in range(batch_num):
-            print("batch_num", j)
-            d_iters = 5
+            #print("batch_num", j)
+            d_iters = 3
             g_iters = 1
 
             train_noise = np.random.uniform(-1.0, 1.0, size=[batch_size, random_dim]).astype(np.float32)
             for k in range(d_iters):
                 print("d_iters", k)
-                train_image = sess.run(image_batch)
+                #train_image = sess.run(image_batch)
+                train_image = mnist.train.next_batch(BATCH_SIZE)[0].reshape([BATCH_SIZE, 28, 28, 1])
                 #wgan clip weights
                 sess.run(d_clip)
                 
@@ -236,24 +292,45 @@ def train(data_folder):
                 _, gLoss = sess.run([trainer_g, g_loss],
                                     feed_dict={random_input: train_noise, is_train: True})
 
-            # print 'train:[%d/%d],d_loss:%f,g_loss:%f' % (i, j, dLoss, gLoss)
+            print 'train:[%d/%d],d_loss:%f,g_loss:%f' % (i, j, dLoss, gLoss)
             
         # save check point every 500 epoch
         if i % save_every == 0:
-            if not os.path.exists(logdir + version):
-                os.makedirs(logdir + version)
-            saver.save(sess, logdir +version + '/' + str(i))  
+            saver.save(sess, logdir +version + str(i))  
         if i % plot_every == 0:
             # save images
-            if not os.path.exists(results_dir):
-                os.makedirs(results_dir)
-            sample_noise = np.random.uniform(-1.0, 1.0, size=[batch_size, random_dim]).astype(np.float32)
+            sample_noise = np.random.uniform(-1.0, 1.0, size=[16, random_dim]).astype(np.float32)
             imgtest = sess.run(fake_image, feed_dict={random_input: sample_noise, is_train: False})
             # imgtest = imgtest * 255.0
             # imgtest.astype(np.uint8)
-            save_images(imgtest, [8,8] ,results_dir + '/epoch' + str(i) + '.jpg')
+            save_images(imgtest, [4,4] ,results_dir + '/{}_epoch'.format(i) + '.jpg')
+            print(imgtest.shape)
+            # D classify these images
+            d_result = sess.run(fake_result, feed_dict={fake_image: imgtest, is_train: False})
+
+            print "start evaluating"
+            fig = plt.figure(frameon=False)
+            ax = plt.Axes(fig, [0., 0., 1., 1.])
+            ax.set_axis_off()
+            fig.add_axes(ax)
+            plt.title("score on generated images")
+            #ipdb.set_trace()
+            for j in range(16):
+                ax1 = fig.add_subplot(4, 4, j+1)
+                #ax1.set_axis_off()
+                #fig.add_axes(ax1)
+                im = imgtest[j, :, :, 0]
+                plt.imshow(im.reshape([128, 128]), cmap='Greys')
+                ax1.get_xaxis().set_ticks([])
+                ax1.get_yaxis().set_ticks([])
+                plt.ylabel("score={}".format(np.int(d_result[j]*10000)/10000.))
+            plt.subplots_adjust(left=0.07, bottom=0.02, right=0.93, top=0.98,
+                wspace=0.02, hspace=0.02)
+            plt.savefig(results_dir + '/{}_epoch_D_sore_G'.format(i))
+            plt.close()
             
-            print('train:[%d],d_loss:%f,g_loss:%f' % (i, dLoss, gLoss))
+            #print('train:[%d],d_loss:%f,g_loss:%f' % (i, dLoss, gLoss))
+        print time.time() - t1
     coord.request_stop()
     coord.join(threads)
 
@@ -279,7 +356,7 @@ def train(data_folder):
 
 
 if __name__ == "__main__":
-    data_dir = 'image_data/OLLO_NO1/' + version
+    data_dir = 'image_data/' + version + '/'
     train(data_dir)
 # test()
 

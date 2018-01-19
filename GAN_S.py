@@ -20,12 +20,14 @@ mnist = input_data.read_data_sets("MNIST_data/")
 
 version = 'MNIST'      #'newspectrogram'
 results_dir = 'results/' + version + "/{0:%Y-%m-%dT%H-%M-%S}".format(datetime.datetime.now())
-logdir = './model/' + version + "/{0:%Y-%m-%dT%H-%M-%S}".format(datetime.datetime.now())
+logdir = 'model/' + version + "/{0:%Y-%m-%dT%H-%M-%S}".format(datetime.datetime.now())
 
-if not os.path.exists(logdir) or not os.path.exists(results_dir):
+if not os.path.exists(logdir):
     os.makedirs(logdir)
-    os.makedirs(results_dir)
 
+if not os.path.exists(results_dir):
+    os.makedirs(results_dir)
+    
 def generator(batch_size, z_dim):
     '''
     Param:
@@ -134,6 +136,7 @@ batch_size = 50
 z_dimensions = 100     # the dimensionality of latent representation
 
 x_placeholder = tf.placeholder("float", shape = [None,28,28,1], name='x_placeholder')
+
 # x_placeholder is for feeding input images to the discriminator
 #The generator is constantly improving to produce more and more realistic images, while the discriminator is
 #trying to get better and better at distinguishing between real and generated images.
@@ -214,7 +217,6 @@ tf.summary.image('Generated_images', images_for_tensorboard, 10)
 merged = tf.summary.merge_all()
 #logdir = "tensorboard/gan/"
 writer = tf.summary.FileWriter(logdir+'/', sess.graph)
-print(logdir)
 
 saver = tf.train.Saver()
 sess.run(tf.global_variables_initializer())
@@ -231,8 +233,9 @@ sess.run(tf.global_variables_initializer())
 gLoss = 0
 dLossFake, dLossReal = 1, 1
 d_real_count, d_fake_count, g_count = 0, 0, 0
-total_steps = 100
-   
+total_steps = 10000
+plot_every = 100
+save_every = 500
 for i in range(total_steps):
     real_image_batch = mnist.train.next_batch(batch_size)[0].reshape([batch_size, 28, 28, 1])
     # Train D on generated images
@@ -255,32 +258,43 @@ for i in range(total_steps):
     
 
     if i % 10 == 0:
-        print "training step: ", i
         real_image_batch = mnist.validation.next_batch(batch_size)[0].reshape([batch_size, 28, 28, 1])
         summary = sess.run(merged, {x_placeholder: real_image_batch, d_real_count_ph:                           d_real_count, d_fake_count_ph: d_fake_count,
                                     g_count_ph: g_count})
         writer.add_summary(summary, i)
         d_real_count, d_fake_count, g_count = 0, 0, 0
 
-    if i % 50 == 0:
-        gen_num = 5
-        # Use current trained model to generate 3 images
+        print 'train:[%d],dLossReal:%f,dLossFake:%f,gLoss:%f' % (i, dLossReal, dLossFake, gLoss)
+
+    if i % plot_every == 0:
+        gen_num = 16
+        # Use current trained model to generate gen_num images
         images = sess.run(generator(gen_num, z_dimensions))
         # D classify these images
         d_result = sess.run(discriminator(x_placeholder), {x_placeholder: images})
 
+        fig = plt.figure(frameon=False)
+        ax = plt.Axes(fig, [0., 0., 1., 1.])
+        ax.set_axis_off()
+        fig.add_axes(ax)
+        plt.title("score on generated images")
         for j in range(gen_num):
-            print("Discriminator classification", d_result[j])
+            ax1 = fig.add_subplot(4, 4, j+1)
             im = images[j, :, :, 0]
             plt.imshow(im.reshape([28, 28]), cmap='Greys')
-            plt.title("score on generated images")
-            plt.xlabel("score={}".format(d_result[j]))
-            plt.savefig(results_dir + '/Gen_step{}'.format(i))
-            plt.close()
+            ax1.get_xaxis().set_ticks([])
+            ax1.get_yaxis().set_ticks([])
+            plt.ylabel("score={}".format(np.int(d_result[j]*10000)/10000.))
+        plt.subplots_adjust(left=0.07, bottom=0.02, right=0.93, top=0.98,
+            wspace=0.02, hspace=0.02)
+        plt.savefig(results_dir + '/Gen_step{}'.format(i))
+        plt.close()
 
-    if i % 5000 == 0:
+    if i % save_every == 0:
         save_path = saver.save(sess, logdir + "/pretrained_gan{}.ckpt".format(i), global_step=i)
         print("saved to %s" % save_path)
+
+    
 
 # testing
 test_images = sess.run(generator(10, 100))
