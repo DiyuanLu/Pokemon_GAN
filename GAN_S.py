@@ -233,7 +233,7 @@ sess.run(tf.global_variables_initializer())
 gLoss = 0
 dLossFake, dLossReal = 1, 1
 d_real_count, d_fake_count, g_count = 0, 0, 0
-total_steps = 10000
+total_steps = 100000
 plot_every = 100
 save_every = 500
 for i in range(total_steps):
