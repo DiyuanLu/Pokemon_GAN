@@ -200,8 +200,7 @@ def process_data():
                                         
     content = tf.read_file(images_queue[0])
     image = tf.image.decode_jpeg(content, channels = CHANNEL)
-    # sess1 = tf.Session()
-    # print sess1.run(image)
+    
     image = tf.image.random_flip_left_right(image)
     image = tf.image.random_brightness(image, max_delta = 0.1)
     image = tf.image.random_contrast(image, lower = 0.9, upper = 1.1)
@@ -324,11 +323,10 @@ def discriminator(input, is_train, reuse=False):
     return logits #, acted_out
 
 
-
-
 def train():
     random_dim = RANDOM_DIM
-    
+
+    ################### Get parameters
     args = get_arguments()
     try:
         directories = validate_directories(args)
@@ -347,7 +345,8 @@ def train():
     # Even if we restored the model, we will treat it as new training
     # if the trained model is written into an arbitrary location.
     is_overwritten_training = logdir != restore_from
-    
+
+    ################### define graph
     with tf.variable_scope('input'):
         #real and fake image placholders
         real_image = tf.placeholder(tf.float32, shape = [None, HEIGHT, WIDTH, CHANNEL], name='real_image')
@@ -361,6 +360,8 @@ def train():
     real_result = discriminator(real_image, is_train)
     fake_result = discriminator(fake_image, is_train, reuse=True)
 
+    ###### Mask out the padded frames
+    
     d_loss_fake = tf.reduce_mean(fake_result)
     d_loss_real = tf.reduce_mean(real_result)
     d_loss = tf.reduce_mean(fake_result) - tf.reduce_mean(real_result)  # This optimizes the discriminator.
@@ -382,26 +383,26 @@ def train():
     # clip discriminator weights
     d_clip = [v.assign(tf.clip_by_value(v, -0.01, 0.01)) for v in d_vars]
 
-    # Set up logging for TensorBoard.
+    #################### Set up logging for TensorBoard.
     writer = tf.summary.FileWriter(logdir)
     writer.add_graph(tf.get_default_graph())
     run_metadata = tf.RunMetadata()
     summaries = tf.summary.merge_all()
 
-    ############### load data
+    ################################### load data
     batch_size = BATCH_SIZE
     image_batch, samples_num = process_data()
 
     batch_num = int(samples_num / batch_size)
     total_batch = 0
 
-    # Set up session
+    ##################### Set up session
     sess = tf.Session()
     saver = tf.train.Saver(max_to_keep=20)
     sess.run(tf.global_variables_initializer())
     sess.run(tf.local_variables_initializer())
     
-    # Saver for storing checkpoints of the model.
+    ##################### Saver for storing checkpoints of the model.
     saver = tf.train.Saver(max_to_keep=args.max_checkpoints)
     try:
         saved_global_step = load(saver, sess, restore_from)
@@ -417,7 +418,7 @@ def train():
     coord = tf.train.Coordinator()
     threads = tf.train.start_queue_runners(sess=sess, coord=coord)
 
-
+    #################### TRaining
     print('start training...')
     step = None
     last_saved_step = saved_global_step
@@ -442,7 +443,6 @@ def train():
                                     feed_dict={random_input: train_noise, real_image: train_image, is_train: True})
 
             # Update the generator
-            #ipdb.set_trace()
             for k in range(g_iters):
                 #####train_noise = np.random.uniform(-1.0, 1.0, size=[batch_size, random_dim]).astype(np.float32)
                 _, gLoss = sess.run([trainer_g, g_loss],
