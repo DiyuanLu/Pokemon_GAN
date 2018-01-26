@@ -224,10 +224,18 @@ def process_data():
 
     return images_batch, num_images
 
-def generator(input, RANDOM_DIM, is_train, reuse=False):
+def generator(input, random_dim, seq_size, is_train, reuse=False):
+    '''take random noise and generate an image
+    Param:
+        input: 1D random_noise to start with
+        random_dim: the latent vector dimension from which to generat images
+        seq_size: the real variable size of the input, before padding
+        '''
     c4, c8, c16, c32, c64 = 512, 256, 128, 64, 32 # channel num
     s4 = 4
     output_dim = CHANNEL  # RGB image
+    random_dim = RANDOM_DIM
+    
     with tf.variable_scope('gen') as scope:
         if reuse:
             scope.reuse_variables()
@@ -272,11 +280,15 @@ def generator(input, RANDOM_DIM, is_train, reuse=False):
                                            name='conv6')
         # bn6 = tf.contrib.layers.batch_norm(conv6, is_training=is_train, epsilon=1e-5, decay = 0.9,  updates_collections=None, scope='bn6')
         act6 = tf.nn.tanh(conv6, name='act6')
+        mask = tf.to_float(tf.not_equal(input, 0.))
+        act6 = tf.boolean_mask(act6, mask)
         return act6
 
 
-def discriminator(input, is_train, reuse=False):
+def discriminator(input, seq_size, is_train, reuse=False):
     c2, c4, c8, c16 = 64, 128, 256, 512  # channel num: 64, 128, 256, 512
+    mask = tf.to_float(tf.not_equal(input, 0.))
+    
     with tf.variable_scope('dis') as scope:
         if reuse:
             scope.reuse_variables()
@@ -356,17 +368,16 @@ def train():
 
     # #### Loss
     # wgan
-    fake_image = generator(random_input, random_dim, is_train)
-    real_result = discriminator(real_image, is_train)
-    fake_result = discriminator(fake_image, is_train, reuse=True)
+    fake_image = generator(random_input, seq_size, random_dim, is_train)  # (?, 128, 128, 1)
+    real_result = discriminator(real_image, seq_size, is_train)   #(batch, 1)
+    fake_result = discriminator(fake_image, seq_size, is_train, reuse=True)
 
     ###### Mask out the padded frames
-    
     d_loss_fake = tf.reduce_mean(fake_result)
     d_loss_real = tf.reduce_mean(real_result)
     d_loss = tf.reduce_mean(fake_result) - tf.reduce_mean(real_result)  # This optimizes the discriminator.
     g_loss = - tf.reduce_mean(fake_result)  # This optimizes the generator.
-
+    
     #Outputs a Summary protocol buffer containing a single scalar value.
     tf.summary.scalar('Generator_loss', g_loss)
     tf.summary.scalar('Discriminator_loss_on_real', d_loss_real)
@@ -391,7 +402,7 @@ def train():
 
     ################################### load data
     batch_size = BATCH_SIZE
-    image_batch, samples_num = process_data()
+    image_batch, image_size, samples_num = process_data()   # ?????????????
 
     batch_num = int(samples_num / batch_size)
     total_batch = 0

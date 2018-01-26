@@ -181,6 +181,7 @@ def get_batch(data_dir):
         
         # create batch queues
         # shape shape=(10, ?, 400)  shape=(10, ?, 5125)
+        
         spectro, magnit = tf.train.batch([spectro, magnit],
                                 shapes=[(None, hp.n_mels*hp.r), (None, (1+hp.n_fft//2)*hp.r)],
                                 num_threads=32,
