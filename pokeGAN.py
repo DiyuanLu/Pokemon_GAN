@@ -189,7 +189,7 @@ def process_data():
     pokemon_dir = os.path.join(current_dir, 'image_data', VERSION)
     images = []
     for each in os.listdir(pokemon_dir):
-        images.append(os.path.join(pokemon_dir,each))
+        images.append(os.path.join(pokemon_dir, each))
     # print images
     #  Save the last 10 images for validation 
     all_images = tf.convert_to_tensor(images, dtype = tf.string)
@@ -224,7 +224,7 @@ def process_data():
 
     return images_batch, num_images
 
-def generator(input, random_dim, seq_size, is_train, reuse=False):
+def generator(input, random_dim, is_train, reuse=False):
     '''take random noise and generate an image
     Param:
         input: 1D random_noise to start with
@@ -239,6 +239,7 @@ def generator(input, random_dim, seq_size, is_train, reuse=False):
     with tf.variable_scope('gen') as scope:
         if reuse:
             scope.reuse_variables()
+        #ipdb.set_trace()
         w1 = tf.get_variable('w1', shape=[RANDOM_DIM, s4 * s4 * c4], dtype=tf.float32,
                              initializer=tf.truncated_normal_initializer(stddev=0.02))
         b1 = tf.get_variable('b1', shape=[c4 * s4 * s4], dtype=tf.float32,
@@ -280,12 +281,12 @@ def generator(input, random_dim, seq_size, is_train, reuse=False):
                                            name='conv6')
         # bn6 = tf.contrib.layers.batch_norm(conv6, is_training=is_train, epsilon=1e-5, decay = 0.9,  updates_collections=None, scope='bn6')
         act6 = tf.nn.tanh(conv6, name='act6')
-        mask = tf.to_float(tf.not_equal(input, 0.))
-        act6 = tf.boolean_mask(act6, mask)
+        #mask = tf.to_float(tf.not_equal(input, 0.))
+        #act6 = tf.boolean_mask(act6, mask)
         return act6
 
 
-def discriminator(input, seq_size, is_train, reuse=False):
+def discriminator(input, is_train, reuse=False):
     c2, c4, c8, c16 = 64, 128, 256, 512  # channel num: 64, 128, 256, 512
     mask = tf.to_float(tf.not_equal(input, 0.))
     
@@ -368,9 +369,9 @@ def train():
 
     # #### Loss
     # wgan
-    fake_image = generator(random_input, seq_size, random_dim, is_train)  # (?, 128, 128, 1)
-    real_result = discriminator(real_image, seq_size, is_train)   #(batch, 1)
-    fake_result = discriminator(fake_image, seq_size, is_train, reuse=True)
+    fake_image = generator(random_input, random_dim, is_train)  # (?, 128, 128, 1)
+    real_result = discriminator(real_image, is_train)   #(batch, 1)
+    fake_result = discriminator(fake_image, is_train, reuse=True)
 
     ###### Mask out the padded frames
     d_loss_fake = tf.reduce_mean(fake_result)
@@ -400,9 +401,9 @@ def train():
     run_metadata = tf.RunMetadata()
     summaries = tf.summary.merge_all()
 
-    ################################### load data
+    '''##### load data ############################## '''
     batch_size = BATCH_SIZE
-    image_batch, image_size, samples_num = process_data()   # ?????????????
+    image_batch, samples_num = process_data()   # ?????????????
 
     batch_num = int(samples_num / batch_size)
     total_batch = 0
@@ -445,7 +446,7 @@ def train():
             train_noise = np.random.uniform(-1.0, 1.0, size=[batch_size, random_dim]).astype(np.float32)
             for k in range(d_iters):
                 #print("d_iters", k)
-                #ipdb.set_trace()
+                ipdb.set_trace()
                 train_image = sess.run(image_batch)
                 #wgan clip weights
                 sess.run(d_clip)
